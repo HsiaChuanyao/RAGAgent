@@ -5,7 +5,7 @@ from langchain.agents import create_agent
 llm = ChatOpenAI(model = "gpt-3.5-turbo", temperature = 0)
 
 async def main(query: str):
-    async with MutiServerMcpClient(
+    async with MultiServerMCPClient(
             {
                 "web_server":{
                     "transport":"stdio",
