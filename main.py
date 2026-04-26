@@ -7,7 +7,8 @@ import os
 from langchain_core import documents
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-
+from langchain_tavily import TavilySearch
+from langgraph.prebuilt import create_react_agent
 load_dotenv(override=True, verbose=True)
 from langchain.agents import create_agent, AgentState
 from langchain.chat_models import init_chat_model
@@ -18,7 +19,6 @@ from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.tools import tool
 from mcp_client import llm, main
-from tavily_tool import tavily_search
 from webloader import file_content
 
 prompt_template = ChatPromptTemplate.from_template(
@@ -37,25 +37,39 @@ checkpointer = InMemorySaver()
 text_spliter = RecursiveCharacterTextSplitter(
     chunk_size = 1000,
     chunk_overlap = 200,
-    verbose = True
 )
 texts = text_spliter.split_documents(documents=file_content)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-vectorstore = InMemoryVectorStore.from_documents(documents = texts,embeddings=embeddings)
+vectorstore = InMemoryVectorStore.from_documents(documents = texts,embedding=embeddings)
 
-@tool("retriever", description="retrieve the content of the given query")
-async def retrieve_content(query):
-    """Retrieve the content of the given query"""
+@tool
+def tavily_search(query):
+    """tavily search
+    Args:
+        query (str): query
+    Returns:
+        return the answer to the query
+    """
+    tavily_tool = TavilySearch(max_results=10)
+    tavily_response = tavily_tool.invoke(query, search_depth="advanced")
+    serialized_tavily_response = "\n\n".join(f"Source: {doc.get('url','no sources')}\n\nContent: {doc.get('contents','no contents')}" for doc in tavily_response["results"])
+    return serialized_tavily_response
+
+
+
+@tool
+def retrieve_content(query):
+    """retrieve the content of the given query"""
     retriever = vectorstore.similarly_search(query, k=2)
     serialized_retriever = "\n\n".join(f"Source: {doc.get('source')}\n\nContent: {doc.page_content}" for doc in retriever["results"])
     return serialized_retriever
 
 
 def rag_agent(user_id, thread_id, query):
+    """rag agent"""
     agent = create_agent(
         model=llm,
         tools= [tavily_search,main],
-        checkpoint= checkpointer,
     )
 
     if not thread_id:
@@ -71,7 +85,7 @@ def rag_agent(user_id, thread_id, query):
 
     full_prompt = prompt_template.format(query=query)
     init_state = {"messages":[HumanMessage(content=full_prompt)]}
-    config = {"configurable":{"thread_id":thread_id, "user_id":user_id}}
+    config = {"configurable":{"thread_id":thread_id, "user_id":user_id,"checkpointer": checkpointer }, }
 
     agent_response = agent.invoke(init_state, config=config)
     return agent_response
@@ -91,3 +105,4 @@ if __name__ == "__main__":
             print(f"Error: {e}")
         finally:
             print("-"*40)
+        break
