@@ -17,7 +17,8 @@ async def main(query: str):
         tool = await client.get_tools(query)
         agent = create_agent(llm, tool)
         client_response = await agent.ainvoke({"input":query})
-        print(client_response.get("outputs","error"))
+        print(client_response)
+
 
 
 
